@@ -1,19 +1,11 @@
 ﻿using FileProcessorApi.Services;
 using Microsoft.AspNetCore.Mvc;
-using Microsoft.AspNetCore.SignalR;
 
 namespace FileProcessorApi.Controllers
 {
-    [ApiController]
-    [Route("api/[controller]")]
-    public class FileProcessingController : ControllerBase
+    public class FileProcessingController(FileProcessingService processingService) : BaseController
     {
-        private readonly FileProcessingService _processingService;
-
-        public FileProcessingController(FileProcessingService processingService)
-        {
-            _processingService = processingService;
-        }
+        private readonly FileProcessingService _processingService = processingService;
 
         [HttpPost("upload")]
         public async Task<IActionResult> UploadFile(IFormFile file)

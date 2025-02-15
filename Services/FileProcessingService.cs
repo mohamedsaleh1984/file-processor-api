@@ -1,22 +1,22 @@
 ﻿using FileProcessorApi.Hubs;
 using FileProcessorApi.Models;
 using Microsoft.AspNetCore.SignalR;
-using System.Collections.Concurrent;
-
 namespace FileProcessorApi.Services
 {
     public class FileProcessingService : BackgroundService
     {
-        public IServiceProvider Services { get; }
-        
-        private readonly ConcurrentQueue<FileProcessingTask> _taskQueue = new();
+        private readonly IBackgroundQueue<FileProcessingTask> _queue;
         private readonly SemaphoreSlim _signal = new SemaphoreSlim(0);
         private readonly ILogger<FileProcessingService> _logger;
+        private readonly IHubContext<ProcessingHub> _hubContext;
 
-        public FileProcessingService(IServiceProvider services, ILogger<FileProcessingService> logger)
+        public FileProcessingService(ILogger<FileProcessingService> logger,
+                                IBackgroundQueue<FileProcessingTask> queue,
+                                IHubContext<ProcessingHub> hubContext)
         {
-            Services = services;
             _logger = logger;
+            _hubContext = hubContext;
+            _queue = queue;
         }
 
         public async Task<string> EnqueueTask(IFormFile file)
@@ -38,7 +38,7 @@ namespace FileProcessorApi.Services
                 Status = ProcessingStatus.Pending
             };
 
-            _taskQueue.Enqueue(task);
+            _queue.Enqueue(task);
             _signal.Release();
 
             return taskId;
@@ -46,44 +46,48 @@ namespace FileProcessorApi.Services
 
         protected override async Task ExecuteAsync(CancellationToken stoppingToken)
         {
-            //while (!stoppingToken.IsCancellationRequested)
-            //{
-            //    await _signal.WaitAsync(stoppingToken);
+            _logger.LogInformation("{Type} is now running in the background.", 
+                    nameof(FileProcessingService));
 
-            //    if (_taskQueue.TryDequeue(out var task))
-            //    {
-            //        try
-            //        {
-            //            _logger.LogInformation("Signal received, processing task");
-
-            //            _logger.LogInformation($"Processing task {task.Id}");
-            //            await DoWork(task, stoppingToken);
-            //        }
-            //        catch (Exception ex)
-            //        {
-            //            task.Status = ProcessingStatus.Failed;
-            //            await _hubContext.Clients.Group(task.Id).SendAsync("ProcessingFailed", ex.Message);
-            //        }
-            //    }
-            //}
+            await BackgroundProcessing(stoppingToken);
         }
 
 
-
-        private string ProcessFile(FileProcessingTask task)
+        private async Task BackgroundProcessing(CancellationToken stoppingToken)
         {
-            // Implement your actual file processing here
-            var processedPath = Path.Combine(Directory.GetCurrentDirectory(), "processed", $"{task.Id}_processed_{task.OriginalFileName}");
-            File.Copy(Path.Combine("uploads", $"{task.Id}_{task.OriginalFileName}"), processedPath);
-            return processedPath;
+            while (!stoppingToken.IsCancellationRequested)
+            {
+                try
+                {
+                    FileProcessingTask task = _queue.Dequeue();
+                    if (task == null)
+                        continue;
+                    await _hubContext.Clients.Group(task.Id).SendAsync("ProcessStarted");
+                    task.Status = ProcessingStatus.Processing;
+
+                    // Simulate file processing
+                    for (int i = 0; i <= 100; i++)
+                    {
+                        stoppingToken.ThrowIfCancellationRequested();
+                        task.ProgressPercentage = i;
+                        await _hubContext.Clients.Group(task.Id).SendAsync("ProgressUpdate", i, cancellationToken: stoppingToken);
+                        await Task.Delay(100, stoppingToken);
+                    }
+
+                    task.ProcessedFilePath = "NEW_FILE....txt";
+                    task.Status = ProcessingStatus.Completed;
+
+
+                    // Notify clients of completion
+                    await _hubContext.Clients.Group(task.Id).SendAsync("ProcessingCompleted", cancellationToken: stoppingToken);
+
+                }
+                catch (Exception ex)
+                {
+                    _logger.LogCritical("An error occurred when publishing a customer. Exception: {@Exception}", ex);
+                }
+            }
         }
 
-        public override async Task StopAsync(CancellationToken stoppingToken)
-        {
-            _logger.LogInformation(
-                "Consume Scoped Service Hosted Service is stopping.");
-
-            await base.StopAsync(stoppingToken);
-        }
     }
 }
