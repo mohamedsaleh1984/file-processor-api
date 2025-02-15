@@ -16,9 +16,8 @@ const FileUploader = () => {
         formData.append('file', file);
 
         const response = await axios.post(`${baseUrl}/api/fileprocessing/upload`, formData);
-        console.log('zzzzzzzzzzzz', response);
-
         const newTaskId = response.data.taskId;
+
         setTaskId(newTaskId);
 
         const connection = new HubConnectionBuilder()

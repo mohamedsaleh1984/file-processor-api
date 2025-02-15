@@ -6,9 +6,9 @@ namespace FileProcessorApi.Services
 {
     public class ProcessingHub : Hub
     {
-        public async Task NotifyStatus(string taskId, string status)
+        public async Task JoinTaskGroup(string taskId)
         {
-            await Clients.Client(taskId).SendAsync("ReceiveStatus", status);
+            await Groups.AddToGroupAsync(Context.ConnectionId, taskId);
         }
     }
 
@@ -64,16 +64,16 @@ namespace FileProcessorApi.Services
                 if (_queue.TryDequeue(out FileProcessingTask? task))
                 {
 
-                    await _hubContext.Clients.Client(task.Id).SendAsync("ProcessStarted");
+                    await _hubContext.Clients.Group(task.Id).SendAsync("ProcessStarted");
                     task.Status = ProcessingStatus.Processing;
 
                     // Simulate file processing
-                    for (int i = 0; i <= 1000; i++)
+                    for (int i = 0; i <= 100; i++)
                     {
                         stoppingToken.ThrowIfCancellationRequested();
                         task.ProgressPercentage = i;
-                        await _hubContext.Clients.Client(task.Id).SendAsync("ProgressUpdate", i, cancellationToken: stoppingToken);
-                        await Task.Delay(100, stoppingToken);
+                        await _hubContext.Clients.Group(task.Id).SendAsync("ProgressUpdate", i, cancellationToken: stoppingToken);
+                        await Task.Delay(50, stoppingToken);
                     }
 
                     task.ProcessedFilePath = "NEW_FILE....txt";
@@ -81,7 +81,7 @@ namespace FileProcessorApi.Services
 
 
                     // Notify clients of completion
-                    await _hubContext.Clients.Client(task.Id).SendAsync("ProcessingCompleted", cancellationToken: stoppingToken);
+                    await _hubContext.Clients.Group(task.Id).SendAsync("ProcessingCompleted", cancellationToken: stoppingToken);
                 }
                 else
                 {
