@@ -1,25 +1,31 @@
-﻿using FileProcessorApi.Hubs;
-using FileProcessorApi.Models;
+﻿using FileProcessorApi.Models;
 using Microsoft.AspNetCore.SignalR;
+using System.Collections.Concurrent;
+
 namespace FileProcessorApi.Services
 {
+    public class ProcessingHub : Hub
+    {
+        public async Task NotifyStatus(string taskId, string status)
+        {
+            await Clients.Client(taskId).SendAsync("ReceiveStatus", status);
+        }
+    }
+
     public class FileProcessingService : BackgroundService
     {
-        private readonly IBackgroundQueue<FileProcessingTask> _queue;
-        private readonly SemaphoreSlim _signal = new SemaphoreSlim(0);
         private readonly ILogger<FileProcessingService> _logger;
         private readonly IHubContext<ProcessingHub> _hubContext;
+        private static ConcurrentQueue<FileProcessingTask> _queue = new();
 
         public FileProcessingService(ILogger<FileProcessingService> logger,
-                                IBackgroundQueue<FileProcessingTask> queue,
                                 IHubContext<ProcessingHub> hubContext)
         {
             _logger = logger;
             _hubContext = hubContext;
-            _queue = queue;
         }
 
-        public async Task<string> EnqueueTask(IFormFile file)
+        public async Task<string> PreProcessTask(IFormFile file)
         {
             var taskId = Guid.NewGuid().ToString();
             var uploadsPath = Path.Combine(Directory.GetCurrentDirectory(), "uploads");
@@ -38,39 +44,35 @@ namespace FileProcessorApi.Services
                 Status = ProcessingStatus.Pending
             };
 
-            _queue.Enqueue(task);
-            _signal.Release();
+            EnqueueTask(task);
+
 
             return taskId;
         }
-
-        protected override async Task ExecuteAsync(CancellationToken stoppingToken)
+        public static void EnqueueTask(FileProcessingTask task)
         {
-            _logger.LogInformation("{Type} is now running in the background.", 
-                    nameof(FileProcessingService));
-
-            await BackgroundProcessing(stoppingToken);
+            _queue.Enqueue(task);
         }
 
 
-        private async Task BackgroundProcessing(CancellationToken stoppingToken)
+        protected override async Task ExecuteAsync(CancellationToken stoppingToken)
         {
+
             while (!stoppingToken.IsCancellationRequested)
             {
-                try
+
+                if (_queue.TryDequeue(out FileProcessingTask? task))
                 {
-                    FileProcessingTask task = _queue.Dequeue();
-                    if (task == null)
-                        continue;
-                    await _hubContext.Clients.Group(task.Id).SendAsync("ProcessStarted");
+
+                    await _hubContext.Clients.Client(task.Id).SendAsync("ProcessStarted");
                     task.Status = ProcessingStatus.Processing;
 
                     // Simulate file processing
-                    for (int i = 0; i <= 100; i++)
+                    for (int i = 0; i <= 1000; i++)
                     {
                         stoppingToken.ThrowIfCancellationRequested();
                         task.ProgressPercentage = i;
-                        await _hubContext.Clients.Group(task.Id).SendAsync("ProgressUpdate", i, cancellationToken: stoppingToken);
+                        await _hubContext.Clients.Client(task.Id).SendAsync("ProgressUpdate", i, cancellationToken: stoppingToken);
                         await Task.Delay(100, stoppingToken);
                     }
 
@@ -79,15 +81,16 @@ namespace FileProcessorApi.Services
 
 
                     // Notify clients of completion
-                    await _hubContext.Clients.Group(task.Id).SendAsync("ProcessingCompleted", cancellationToken: stoppingToken);
-
+                    await _hubContext.Clients.Client(task.Id).SendAsync("ProcessingCompleted", cancellationToken: stoppingToken);
                 }
-                catch (Exception ex)
+                else
                 {
-                    _logger.LogCritical("An error occurred when publishing a customer. Exception: {@Exception}", ex);
+                    await Task.Delay(1000); // Avoid CPU overuse
                 }
             }
         }
+
+
 
     }
 }

@@ -1,14 +1,11 @@
-using FileProcessorApi.Hubs;
-using FileProcessorApi.Models;
 using FileProcessorApi.Services;
 
 var builder = WebApplication.CreateBuilder(args);
 builder.Services.AddControllers();
+builder.Services.AddSignalR();
 
 builder.Services.AddHostedService<FileProcessingService>();
-builder.Services.AddSignalR();
-builder.Services.AddSingleton<IBackgroundQueue<FileProcessingTask>, BackgroundQueue<FileProcessingTask>>();
-
+builder.Services.AddSingleton<FileProcessingService>();
 builder.Services.AddCors(ops =>
 {
     ops.AddPolicy("AllowReact", builder =>
@@ -17,6 +14,7 @@ builder.Services.AddCors(ops =>
                   .AllowAnyMethod()
                   .AllowCredentials());
 });
+
 builder.Services.AddOpenApi();
 
 var app = builder.Build();
@@ -42,4 +40,5 @@ app.UseEndpoints(static endpoints =>
     _ = endpoints.MapControllers();
     endpoints.MapHub<ProcessingHub>("/processingHub");
 });
+
 app.Run();  

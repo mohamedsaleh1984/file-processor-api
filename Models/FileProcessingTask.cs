@@ -5,7 +5,7 @@
         public string Id { get; set; } = "";
         public string OriginalFileName { get; set; } = "";
         public string ProcessedFilePath { get; set; } = "";
-        public ProcessingStatus Status { get; set; }= ProcessingStatus.NotStarted;
+        public ProcessingStatus Status { get; set; } = ProcessingStatus.NotStarted;
         public int ProgressPercentage { get; set; } = 0;
     }
 

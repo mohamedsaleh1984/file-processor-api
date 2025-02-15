@@ -3,14 +3,18 @@ using Microsoft.AspNetCore.Mvc;
 
 namespace FileProcessorApi.Controllers
 {
-    public class FileProcessingController(FileProcessingService processingService) : BaseController
+    public class FileProcessingController: BaseController
     {
-        private readonly FileProcessingService _processingService = processingService;
+        private readonly FileProcessingService _processingService;
+        public FileProcessingController(FileProcessingService processingService)
+        {
+            _processingService = processingService;
+        }
 
         [HttpPost("upload")]
         public async Task<IActionResult> UploadFile(IFormFile file)
         {
-            var taskId = await _processingService.EnqueueTask(file);
+            var taskId = await _processingService.PreProcessTask(file);
             return Ok(new { taskId });
         }
 
